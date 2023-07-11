@@ -5,7 +5,8 @@ import tensorflow as tf
 import network
 import guided_filter
 from tqdm import tqdm
-import argparse
+
+tf.compat.v1.disable_eager_execution()
 
 def resize_crop(image):
     h, w, c = np.shape(image)
@@ -21,43 +22,45 @@ def resize_crop(image):
     return image
     
 
-def cartoonize(load_path, save_folder, model_path):
-    input_photo = tf.placeholder(tf.float32, [1, None, None, 3])
+def cartoonize(load_folder, save_folder, model_path):
+    input_photo = tf.compat.v1.placeholder(tf.float32, [1, None, None, 3])
     network_out = network.unet_generator(input_photo)
     final_out = guided_filter.guided_filter(input_photo, network_out, r=1, eps=5e-3)
 
-    all_vars = tf.trainable_variables()
+    all_vars = tf.compat.v1.trainable_variables()
     gene_vars = [var for var in all_vars if 'generator' in var.name]
-    saver = tf.train.Saver(var_list=gene_vars)
+    saver = tf.compat.v1.train.Saver(var_list=gene_vars)
     
-    config = tf.ConfigProto()
+    config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = True
-    sess = tf.Session(config=config)
+    sess = tf.compat.v1.Session(config=config)
 
-    sess.run(tf.global_variables_initializer())
+    sess.run(tf.compat.v1.global_variables_initializer())
     saver.restore(sess, tf.train.latest_checkpoint(model_path))
+    name_list = os.listdir(load_folder)
+    for name in tqdm(name_list):
+        try:
+            load_path = os.path.join(load_folder, name)
+            save_path = os.path.join(save_folder, name)
+            image = cv2.imread(load_path)
+            image = resize_crop(image)
+            batch_image = image.astype(np.float32)/127.5 - 1
+            batch_image = np.expand_dims(batch_image, axis=0)
+            output = sess.run(final_out, feed_dict={input_photo: batch_image})
+            output = (np.squeeze(output)+1)*127.5
+            output = np.clip(output, 0, 255).astype(np.uint8)
+            cv2.imwrite(save_path, output)
+        except:
+            print('cartoonize {} failed'.format(load_path))
+
+
     
-    try:
-        save_path = os.path.join(save_folder, os.path.basename(load_path))
-        image = cv2.imread(load_path)
-        image = resize_crop(image)
-        batch_image = image.astype(np.float32)/127.5 - 1
-        batch_image = np.expand_dims(batch_image, axis=0)
-        output = sess.run(final_out, feed_dict={input_photo: batch_image})
-        output = (np.squeeze(output)+1)*127.5
-        output = np.clip(output, 0, 255).astype(np.uint8)
-        cv2.imwrite(save_path, output)
-    except:
-        print('cartoonize {} failed'.format(load_path))
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input_image", type=str, required=True, help="Path to the input image")
-    parser.add_argument("--output_folder", type=str, required=True, help="Path to the output folder")
-    args = parser.parse_args()
-
+if __name__ == '__main__':
     model_path = 'saved_models'
-    if not os.path.exists(args.output_folder):
-        os.mkdir(args.output_folder)
-    cartoonize(args.input_image, args.output_folder, model_path)
+    load_folder = 'test_images'
+    save_folder = 'cartoonized_images'
+    if not os.path.exists(save_folder):
+        os.mkdir(save_folder)
+    cartoonize(load_folder, save_folder, model_path)
+    
