@@ -59,5 +59,5 @@ if __name__ == '__main__':
     parser.add_argument("--output_folder", type=str, help="path to output folder")
     args = parser.parse_args()
 
-    model_path = 'saved_models'
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'saved_models')
     cartoonize_single_file(args.input_image, args.output_folder, model_path)
